@@ -1,0 +1,20 @@
+{
+  "service": "cron-job.org",
+  "purpose": "Prevent Render.com Free Web Service from sleeping after 15 minutes of inactivity",
+  "job_settings": {
+    "title": "Zero-Touch n8n Render Keep-Alive",
+    "url": "https://<YOUR_RENDER_APP_NAME>.onrender.com/healthz",
+    "schedule": "*/10 * * * *",
+    "execution_interval_minutes": 10,
+    "timezone": "Asia/Kolkata",
+    "request_method": "GET",
+    "timeout_seconds": 30,
+    "expected_http_status": 200,
+    "expected_response_body": "{\"status\":\"ok\"}",
+    "notifications": {
+      "on_failure": true,
+      "failure_threshold_consecutive": 2,
+      "on_recovery": true
+    }
+  }
+}
