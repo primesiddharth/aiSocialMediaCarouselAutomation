@@ -1,7 +1,7 @@
 # ============================================================================
 # ZERO-TOUCH SOCIAL AUTOMATION - PRODUCTION DOCKERFILE (RENDER & VPS READY)
 # ============================================================================
-FROM docker.n8n.io/n8nio/n8n:1.76.1
+FROM n8nio/n8n:1.76.1
 
 USER root
 
