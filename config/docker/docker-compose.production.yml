@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zero_touch_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_POSTGRESDB_USER:-n8n_admin}
+      POSTGRES_PASSWORD: ${DB_POSTGRESDB_PASSWORD}
+      POSTGRES_DB: ${DB_POSTGRESDB_DATABASE:-n8n_production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_POSTGRESDB_USER:-n8n_admin} -d ${DB_POSTGRESDB_DATABASE:-n8n_production}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - automation_net
+
+  n8n:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    container_name: zero_touch_n8n
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../../.env
+    environment:
+      - DEPLOY_TARGET=dedicated_vps
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../../media_storage:/files/media
+    networks:
+      - automation_net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: zero_touch_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - N8N_HOST=${N8N_HOST}
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../media_storage:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - n8n
+    networks:
+      - automation_net
+
+volumes:
+  postgres_data:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  automation_net:
+    driver: bridge

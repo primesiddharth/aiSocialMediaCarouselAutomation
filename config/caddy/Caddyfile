@@ -1,0 +1,13 @@
+{$N8N_HOST} {
+    # Serve locally stored FLUX.1 generated images when running on a dedicated VPS
+    handle_path /media/* {
+        root * /srv/media
+        file_server
+        header Cache-Control "public, max-age=31536000, immutable"
+    }
+
+    # Reverse proxy all other traffic to n8n
+    reverse_proxy n8n:5678 {
+        flush_interval -1
+    }
+}

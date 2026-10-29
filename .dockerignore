@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.venv
+venv
+__pycache__
+tests/
+scripts/
+media_storage/
+README.md
+config/docker/docker-compose*

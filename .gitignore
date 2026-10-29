@@ -1,0 +1,29 @@
+# Environment & Secrets (NEVER COMMIT)
+.env
+.env.local
+.env.production
+secrets/
+*.pem
+*.key
+
+# Python & Node artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+
+# Local Media & Database Volumes
+media_storage/*
+!media_storage/.gitkeep
+postgres_data/
+n8n_data/
+caddy_data/
+caddy_config/
+
+# IDE & OS files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+*.log

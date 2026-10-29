@@ -1,0 +1,42 @@
+{
+  "sheet_tab_name": "Content_Pipeline",
+  "hr_input_columns": {
+    "Topic": {
+      "col_letter": "A",
+      "required": true,
+      "type": "string",
+      "description": "Core announcement topic entered by HR"
+    },
+    "Include Image?": {
+      "col_letter": "B",
+      "required": true,
+      "type": "enum",
+      "allowed_values": ["Yes", "No"],
+      "description": "Controls dynamic routing Switch node in n8n"
+    },
+    "Mentions (Optional)": {
+      "col_letter": "C",
+      "required": false,
+      "type": "string",
+      "description": "Optional @handles woven naturally into platform copy"
+    },
+    "Status": {
+      "col_letter": "D",
+      "required": false,
+      "type": "enum",
+      "allowed_values": ["Pending", "Processing", "Draft", "Approved", "Publishing", "Published", "Error"],
+      "description": "Human-in-the-loop approval & crash-recovery state machine"
+    }
+  },
+  "system_output_columns": {
+    "LinkedIn_Post": "E",
+    "Facebook_Post": "F",
+    "Instagram_Post": "G",
+    "Image_Gen_Prompt": "H",
+    "Image_Description": "I",
+    "Image_URL": "J",
+    "Buffer_Update_IDs": "K",
+    "Error_Message": "L",
+    "Updated_At": "M"
+  }
+}
