@@ -1,0 +1,434 @@
+{
+  "name": "01_Zero_Touch_Draft_Generation_Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "b1a00001-0001-4000-8000-000000000001",
+      "name": "01_Schedule_Poll_Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_DOCUMENT_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_TAB_NAME || 'Content_Pipeline' }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "b1a00002-0002-4000-8000-000000000002",
+      "name": "02_Fetch_Sheet_Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter for rows needing AI generation (Topic is non-empty AND Status is empty or 'Pending')\n// Process strictly 1 row per run to stay well within Render Free 512MB RAM & OpenRouter rate limits.\nconst allItems = $input.all();\nconst eligible = [];\n\nfor (const item of allItems) {\n  const row = item.json;\n  const topic = String(row['Topic'] || '').trim();\n  const status = String(row['Status'] || '').trim().toLowerCase();\n  const linkedInDraft = String(row['LinkedIn_Post'] || '').trim();\n\n  if (topic.length > 0 && (status === '' || status === 'pending') && linkedInDraft === '') {\n    const rawImageFlag = String(row['Include Image?'] || 'No').trim().toLowerCase();\n    const includeImageNormalized = (rawImageFlag === 'yes' || rawImageFlag === 'true') ? 'Yes' : 'No';\n    const mentionsNormalized = String(row['Mentions (Optional)'] || '').trim();\n\n    eligible.push({\n      json: {\n        row_number: row.row_number,\n        Topic: topic,\n        'Include Image?': includeImageNormalized,\n        'Mentions (Optional)': mentionsNormalized,\n        Status: 'Processing'\n      }\n    });\n    break; // Strictly 1 row per execution cycle for maximum crash-resilience\n  }\n}\n\nreturn eligible;"
+      },
+      "id": "b1a00003-0003-4000-8000-000000000003",
+      "name": "03_Filter_And_Sanitize_Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_DOCUMENT_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_TAB_NAME || 'Content_Pipeline' }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Topic": "={{ $json.Topic }}",
+            "Status": "Processing",
+            "Updated_At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Topic"
+          ],
+          "schema": [
+            {
+              "id": "Topic",
+              "displayName": "Topic",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Updated_At",
+              "displayName": "Updated_At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1a00004-0004-4000-8000-000000000004",
+      "name": "04_Lock_Row_Processing",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// ZERO-TOUCH META-PROMPTING ENGINE (OPENROUTER DYNAMIC FREE-TIER ROUTING)\n// Strictly implements Section 3 of Final Automation Architecture PDF\n// ============================================================================\nconst inputRow = $('03_Filter_And_Sanitize_Input').first().json;\nconst topic = inputRow['Topic'];\nconst includeImage = inputRow['Include Image?'];\nconst mentions = inputRow['Mentions (Optional)'] || '';\n\nconst apiKey = $env.OPENROUTER_API_KEY;\nconst baseUrl = ($env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\\/$/, '');\nconst configuredModel =$env.OPENROUTER_MODEL || 'qwen/qwen-2.5-72b-instruct:free';\n\nif (!apiKey) {\n  throw new Error('OPENROUTER_API_KEY is missing from environment variables.');\n}\n\nconst systemPrompt = [\n  \"You are an expert social media strategist. Determine the best tone per platform.\",\n  \"If handles are provided in the 'Mentions' variable, weave them naturally into the platform-specific post text. If empty, rely only on hashtags.\",\n  \"CRITICAL RULES:\",\n  \"1. If 'Image Needed' is 'No' (case-insensitive), you MUST set both \\\"image_gen_prompt\\\" and \\\"image_description\\\" to null.\",\n  \"2. If 'Image Needed' is 'Yes' (case-insensitive), \\\"image_gen_prompt\\\" MUST be a highly detailed, photorealistic 4k prompt for FLUX.1, and \\\"image_description\\\" MUST be concise accessibility alt-text describing the image.\",\n  \"3. Return ONLY a raw, valid JSON object with NO markdown formatting, NO ```json code blocks, and NO extra text:\",\n  '{ \"linkedin_post\": \"Professional tone text, handles, hashtags\", \"facebook_post\": \"Conversational text, handles, hashtags\", \"instagram_post\": \"Visual tone, emoji-heavy, hashtags\", \"image_gen_prompt\": \"A highly detailed 4k prompt for FLUX.1 (or null)\", \"image_description\": \"Alt-text describing the image (or null)\" }'\n].join('\\n');\n\nconst userPrompt = `Topic: ${topic} | Image Needed: ${includeImage} | Mentions: ${mentions}`;\n\nfunction extractCleanJson(rawText) {\n  let cleaned = String(rawText || '').trim();\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '');\n  const firstBrace = cleaned.indexOf('{');\n  const lastBrace = cleaned.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1) {\n    cleaned = cleaned.substring(firstBrace, lastBrace + 1);\n  }\n  return JSON.parse(cleaned);\n}\n\n// Step 1: Dynamically discover live 0-cost free models on OpenRouter\nlet candidateModels = [configuredModel];\ntry {\n  const modelsResp = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `${baseUrl}/models`,\n    headers: { 'Authorization': `Bearer ${apiKey}` },\n    json: true,\n    timeout: 15000\n  });\n  const dataList = (modelsResp && modelsResp.data) ? modelsResp.data : [];\n  for (const m of dataList) {\n    const p = String(m?.pricing?.prompt ?? '1');\n    const c = String(m?.pricing?.completion ?? '1');\n    if ((p === '0' || p === '0.0') && (c === '0' || c === '0.0')) {\n      if (m.id && !m.id.includes('embed') && !m.id.includes('clip') && !candidateModels.includes(m.id)) {\n        candidateModels.push(m.id);\n      }\n    }\n  }\n} catch (e) {\n  // Fallback static list if /models discovery times out\n  const fallbacks = [\n    'nvidia/nemotron-3.5-super-vl:free',\n    'qwen/qwen-2.5-72b-instruct:free',\n    'google/gemma-3-27b-it:free',\n    'meta-llama/llama-3.3-70b-instruct:free'\n  ];\n  for (const fb of fallbacks) {\n    if (!candidateModels.includes(fb)) candidateModels.push(fb);\n  }\n}\n\nlet parsedOutput = null;\nlet usedModel = null;\nlet lastError = '';\n\nfor (const modelId of candidateModels.slice(0, 12)) {\n  try {\n    const chatResp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${baseUrl}/chat/completions`,\n      headers: {\n        'Authorization': `Bearer ${apiKey}`,\n        'Content-Type': 'application/json',\n        'HTTP-Referer': $env.WEBHOOK_URL || '[https://zero-touch-n8n.onrender.com](https://zero-touch-n8n.onrender.com)',\n        'X-Title': 'Zero-Touch Social Automation'\n      },\n      body: {\n        model: modelId,\n        messages: [\n          { role: 'system', content: systemPrompt },\n          { role: 'user', content: userPrompt }\n        ],\n        temperature: 0.4\n      },\n      json: true,\n      timeout: 45000\n    });\n\n    const content = chatResp?.choices?.[0]?.message?.content;\n    if (!content) throw new Error('Empty response content');\n    const candidateJson = extractCleanJson(content);\n\n    if (candidateJson.linkedin_post && candidateJson.facebook_post && candidateJson.instagram_post) {\n      parsedOutput = candidateJson;\n      usedModel = modelId;\n      break;\n    }\n  } catch (err) {\n    lastError = `${modelId}: ${err.message}`;\n    continue;\n  }\n}\n\nif (!parsedOutput) {\n  throw new Error(`All OpenRouter models failed. Last error: ${lastError}`);\n}\n\n// Enforce strict PDF Section 2 & 3 business rule for text-only vs image posts\nif (includeImage.toLowerCase() === 'no') {\n  parsedOutput.image_gen_prompt = null;\n  parsedOutput.image_description = null;\n} else {\n  if (!parsedOutput.image_gen_prompt) {\n    parsedOutput.image_gen_prompt = `Photorealistic 4k editorial photography representing: ${topic}, modern lighting, high detail`;\n  }\n  if (!parsedOutput.image_description) {\n    parsedOutput.image_description = `Visual illustration for ${topic}`;\n  }\n}\n\nreturn [\n  {\n    json: {\n      ...inputRow,\n      ai_model_used: usedModel,\n      linkedin_post: parsedOutput.linkedin_post,\n      facebook_post: parsedOutput.facebook_post,\n      instagram_post: parsedOutput.instagram_post,\n      image_gen_prompt: parsedOutput.image_gen_prompt,\n      image_description: parsedOutput.image_description,\n      Image_URL: null\n    }\n  }\n];"
+      },
+      "id": "b1a00005-0005-4000-8000-000000000005",
+      "name": "05_AI_Strategist_OpenRouter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json['Include Image?'] }}",
+              "rightValue": "Yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1a00006-0006-4000-8000-000000000006",
+      "name": "06_Switch_Include_Image",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// CONDITIONAL VISUAL AI ENGINE (HUGGING FACE FLUX.1 + ZERO-COST IMGBB URL HOST)\n// Triggered ONLY when 'Include Image?' == 'Yes'\n// ============================================================================\nconst item = $input.first().json;\nconst prompt = item.image_gen_prompt || `Photorealistic 4k corporate photography of ${item.Topic}`;\nconst hfKey = $env.HUGGINGFACE_API_KEY;\nconst imgbbKey = $env.IMGBB_API_KEY;\nconst imgbbUrl = $env.IMGBB_UPLOAD_URL || '[https://api.imgbb.com/1/upload](https://api.imgbb.com/1/upload)';\n\nif (!imgbbKey) {\n  throw new Error('IMGBB_API_KEY is missing from environment variables.');\n}\n\nconst hfEndpoints = [\n  $env.HUGGINGFACE_MODEL_URL || '[https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell](https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell)',\n  '[https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev](https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev)',\n  '[https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0](https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0)'\n];\n\nlet imageBuffer = null;\n\n// 1. Attempt Hugging Face Serverless Inference endpoints\nif (hfKey) {\n  for (const endpoint of hfEndpoints) {\n    try {\n      const resp = await this.helpers.httpRequest({\n        method: 'POST',\n        url: endpoint,\n        headers: {\n          'Authorization': `Bearer ${hfKey}`,\n          'Content-Type': 'application/json',\n          'Accept': 'image/jpeg'\n        },\n        body: JSON.stringify({ inputs: prompt }),\n        encoding: 'arraybuffer',\n        returnFullResponse: false,\n        timeout: 45000\n      });\n      const buf = Buffer.from(resp);\n      if (buf.length > 1000) {\n        imageBuffer = buf;\n        break;\n      }\n    } catch (err) {\n      continue;\n    }\n  }\n}\n\n// 2. Fallback to Zero-Cost Public Image Router if HF free tier returns 410/402/503\nif (!imageBuffer) {\n  const encodedPrompt = encodeURIComponent(prompt.substring(0, 180));\n  const fallbackUrls = [\n    `[https://image.pollinations.ai/prompt/$](https://image.pollinations.ai/prompt/$){encodedPrompt}?width=1024&height=1024&nologo=true`,\n    '[https://picsum.photos/1024/1024](https://picsum.photos/1024/1024)'\n  ];\n  for (const fbUrl of fallbackUrls) {\n    try {\n      const resp = await this.helpers.httpRequest({\n        method: 'GET',\n        url: fbUrl,\n        encoding: 'arraybuffer',\n        timeout: 30000\n      });\n      const buf = Buffer.from(resp);\n      if (buf.length > 1000) {\n        imageBuffer = buf;\n        break;\n      }\n    } catch (err) {\n      continue;\n    }\n  }\n}\n\nif (!imageBuffer) {\n  throw new Error('Failed to generate visual binary from Hugging Face and fallback image routers.');\n}\n\n// 3. Convert binary image to permanent public HTTPS URL via ImgBB\nconst base64Image = imageBuffer.toString('base64');\nconst formBody = `key=${encodeURIComponent(imgbbKey)}&image=${encodeURIComponent(base64Image)}&name=flux_${Date.now()}`;\n\nconst uploadResp = await this.helpers.httpRequest({\n  method: 'POST',\n  url: imgbbUrl,\n  headers: {\n    'Content-Type': 'application/x-www-form-urlencoded'\n  },\n  body: formBody,\n  json: true,\n  timeout: 45000\n});\n\nconst publicUrl = uploadResp?.data?.url;\nif (!publicUrl) {\n  throw new Error('ImgBB did not return a valid public image URL.');\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n      Image_URL: publicUrl\n    }\n  }\n];"
+      },
+      "id": "b1a00007-0007-4000-8000-000000000007",
+      "name": "07_Generate_And_Host_Image",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Text-Only Branch ('Include Image?' == 'No')\n// Bypasses Hugging Face completely and guarantees Image_URL is null\nconst item = $input.first().json;\nreturn [\n  {\n    json: {\n      ...item,\n      image_gen_prompt: null,\n      image_description: null,\n      Image_URL: ''\n    }\n  }\n];"
+      },
+      "id": "b1a00008-0008-4000-8000-000000000008",
+      "name": "08_Bypass_Image_Text_Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_DOCUMENT_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_TAB_NAME || 'Content_Pipeline' }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Topic": "={{ $json.Topic }}",
+            "Status": "Draft",
+            "LinkedIn_Post": "={{ $json.linkedin_post }}",
+            "Facebook_Post": "={{ $json.facebook_post }}",
+            "Instagram_Post": "={{ $json.instagram_post }}",
+            "Image_Gen_Prompt": "={{ $json.image_gen_prompt || '' }}",
+            "Image_Description": "={{ $json.image_description || '' }}",
+            "Image_URL": "={{ $json.Image_URL || '' }}",
+            "Error_Message": "",
+            "Updated_At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Topic"
+          ],
+          "schema": [
+            {
+              "id": "Topic",
+              "displayName": "Topic",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "LinkedIn_Post",
+              "displayName": "LinkedIn_Post",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Facebook_Post",
+              "displayName": "Facebook_Post",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Instagram_Post",
+              "displayName": "Instagram_Post",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Image_Gen_Prompt",
+              "displayName": "Image_Gen_Prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Image_Description",
+              "displayName": "Image_Description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Image_URL",
+              "displayName": "Image_URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Error_Message",
+              "displayName": "Error_Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Updated_At",
+              "displayName": "Updated_At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1a00009-0009-4000-8000-000000000009",
+      "name": "09_Write_Drafts_To_Google_Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "01_Schedule_Poll_Trigger": {
+      "main": [
+        [
+          {
+            "node": "02_Fetch_Sheet_Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02_Fetch_Sheet_Rows": {
+      "main": [
+        [
+          {
+            "node": "03_Filter_And_Sanitize_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03_Filter_And_Sanitize_Input": {
+      "main": [
+        [
+          {
+            "node": "04_Lock_Row_Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "04_Lock_Row_Processing": {
+      "main": [
+        [
+          {
+            "node": "05_AI_Strategist_OpenRouter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05_AI_Strategist_OpenRouter": {
+      "main": [
+        [
+          {
+            "node": "06_Switch_Include_Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "06_Switch_Include_Image": {
+      "main": [
+        [
+          {
+            "node": "07_Generate_And_Host_Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "08_Bypass_Image_Text_Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "07_Generate_And_Host_Image": {
+      "main": [
+        [
+          {
+            "node": "09_Write_Drafts_To_Google_Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "08_Bypass_Image_Text_Only": {
+      "main": [
+        [
+          {
+            "node": "09_Write_Drafts_To_Google_Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}
