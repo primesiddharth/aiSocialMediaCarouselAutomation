@@ -1,7 +1,5 @@
 """
-Standalone Pre-Flight Test for Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell)
-+ Zero-Cost Permanent URL Hosting (ImgBB).
-Capable of ~65-90 high-res FLUX.1 images per 24 hours on the 10,000 free daily neurons tier.
+Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell) Poster Test + Auth Diagnostic.
 """
 import base64
 import json
@@ -15,8 +13,6 @@ from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8")
 
 ROOT = Path(r"D:\zero-touch-social-automation")
 ENV_FILE = ROOT / ".env"
@@ -29,77 +25,77 @@ def load_env(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        env_vars[k.strip()] = re.sub(r"[<>\"'\s]", "", v.strip())
+        v = v.split(" #")[0].strip()  # Strip inline comments
+        env_vars[k.strip()] = re.sub(r"[<>\"'\s]", "", v)
     return env_vars
 
-def generate_cf_flux(account_id: str, api_token: str, prompt: str) -> tuple[str, bytes]:
+def generate_cf_flux_poster(account_id: str, api_token: str, prompt: str) -> tuple[str, bytes]:
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell"
-    payload = json.dumps({
-        "prompt": prompt,
-    }).encode("utf-8")
-
     req = urllib.request.Request(
         url,
-        data=payload,
+        data=json.dumps({"prompt": prompt}).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json",
+            "User-Agent": "ZeroTouch-CF-Client/1.0",
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-        b64_img = data.get("result", {}).get("image")
-        if not b64_img:
-            raise RuntimeError(f"Cloudflare response missing base64 image: {data}")
-        return b64_img, base64.b64decode(b64_img)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            b64_img = data.get("result", {}).get("image")
+            if not b64_img:
+                raise RuntimeError(f"Missing image in response: {data}")
+            return b64_img, base64.b64decode(b64_img)
+    except urllib.error.HTTPError as he:
+        err_body = he.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Cloudflare HTTP {he.code}: {err_body}") from he
 
 def upload_to_imgbb(imgbb_key: str, b64_image: str) -> str:
     form_data = urllib.parse.urlencode({
         "key": imgbb_key,
         "image": b64_image,
-        "name": f"cf_flux_{int(time.time())}",
+        "name": f"cf_poster_{int(time.time())}",
     }).encode("utf-8")
     req = urllib.request.Request("https://api.imgbb.com/1/upload", data=form_data, method="POST")
     with urllib.request.urlopen(req, timeout=45) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-        return result["data"]["url"]
+        return json.loads(resp.read().decode("utf-8"))["data"]["url"]
 
 def main() -> None:
-    print("⚡ Testing Cloudflare Workers AI (FLUX.1-schnell) + ImgBB Hosting...\n")
     env = load_env(ENV_FILE)
-    cf_account = env.get("CLOUDFLARE_ACCOUNT_ID", "")
-    cf_token = env.get("CLOUDFLARE_API_TOKEN", "")
+    cf_account = env.get("CLOUDFLARE_ACCOUNT_ID") or env.get("CF_ACCOUNT_ID") or ""
+    cf_token = env.get("CLOUDFLARE_API_TOKEN") or env.get("CLOUDFLARE_API_KEY") or env.get("CF_API_TOKEN") or ""
     imgbb_key = env.get("IMGBB_API_KEY", "")
 
-    if not cf_account or "paste_your" in cf_account or not cf_token or "paste_your" in cf_token:
-        print("❌ [FAIL] Please set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in .env first!")
+    print(f"🔑 Loaded Account ID: {cf_account[:6]}...{cf_account[-4:] if len(cf_account) > 10 else 'INVALID'} (len={len(cf_account)})")
+    print(f"🔑 Loaded API Token : {cf_token[:6]}...{cf_token[-4:] if len(cf_token) > 10 else 'INVALID'} (len={len(cf_token)})\n")
+
+    if len(cf_account) != 32 or "paste" in cf_account.lower() or len(cf_token) < 20 or "paste" in cf_token.lower():
+        print("❌ [FAIL] Your local .env still has placeholder or invalid Cloudflare credentials!")
+        print("   Copy the exact CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN from Render into D:\\zero-touch-social-automation\\.env")
         sys.exit(1)
 
-    prompt = (
-        "Photorealistic 4k wide-angle shot of a modern enterprise AI data center dashboard "
-        "displaying glowing cyan real-time telemetry charts in a sleek glass office, cinematic lighting"
+    poster_prompt = (
+        'Split-layout corporate recruitment announcement poster graphic design. '
+        'Left panel on navy blue gradient: bold white and yellow headline text "Welcome Our New HR!" '
+        'and subtitle "RAHUL ROY" with yellow brush underline, three white circular icon badges labeled '
+        '"People First", "New Ideas", "Stronger Together", and bottom yellow banner reading "Welcome Aboard!". '
+        'Right side: modern office desk with black leather chair, hanging lanyard ID card reading "HR", '
+        'laptop, and coffee mug. Crisp vector typography, Canva Pro poster layout, 4k.'
     )
 
-    print("  -> Calling Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell)...")
     try:
-        b64_img, img_bytes = generate_cf_flux(cf_account, cf_token, prompt)
-    except urllib.error.HTTPError as he:
-        err = he.read().decode("utf-8", errors="ignore")
-        print(f"❌ [FAIL] Cloudflare HTTP {he.code}: {err}")
-        sys.exit(1)
+        b64_img, img_bytes = generate_cf_flux_poster(cf_account, cf_token, poster_prompt)
     except Exception as exc:
-        print(f"❌ [FAIL] Cloudflare request failed: {exc}")
+        print(f"❌ [FAIL] {exc}")
         sys.exit(1)
 
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    local_path = MEDIA_DIR / "test_cf_flux_output.jpg"
+    local_path = MEDIA_DIR / "test_cf_flux_poster.jpg"
     local_path.write_bytes(img_bytes)
-    print(f"✅ [PASS] Generated genuine FLUX.1 image ({len(img_bytes):,} bytes) -> {local_path.relative_to(ROOT)}")
-
-    print("  -> Uploading FLUX.1 image to ImgBB...")
-    public_url = upload_to_imgbb(imgbb_key, b64_img)
-    print(f"✅ [PASS] Live Public URL: {public_url}")
+    print(f"✅ [PASS] Saved poster ({len(img_bytes):,} bytes) -> {local_path.relative_to(ROOT)}")
+    print(f"✅ [PASS] Live Poster URL: {upload_to_imgbb(imgbb_key, b64_img)}")
 
 if __name__ == "__main__":
     main()
