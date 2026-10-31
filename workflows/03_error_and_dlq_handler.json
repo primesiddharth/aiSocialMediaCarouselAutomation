@@ -1,0 +1,141 @@
+{
+  "name": "03_Error_And_DLQ_Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c3a00001-0001-4000-8000-000000000001",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// DEAD-LETTER QUEUE (DLQ) PAYLOAD FORMATTER\n// Extracts precise crash details from the failing workflow to log in Sheets\n// ============================================================================\nconst errData = $input.first().json.execution.error;\nconst wfName = $input.first().json.workflow.name;\nconst execId = $input.first().json.execution.id;\nconst wfId = $input.first().json.workflow.id;\n\n// Construct the direct link to the crashed execution in Render\nconst baseUrl = $env.WEBHOOK_URL || 'https://zero-touch-n8n.onrender.com';\nconst executionUrl = `${baseUrl}/workflow/${wfId}/executions/${execId}`;\n\nreturn [{\n  json: {\n    Timestamp: new Date().toISOString(),\n    Workflow_Name: wfName,\n    Node_Name: errData.node?.name || 'Unknown Node',\n    Error_Message: errData.message || JSON.stringify(errData),\n    Execution_URL: executionUrl\n  }\n}];"
+      },
+      "id": "c3a00002-0002-4000-8000-000000000002",
+      "name": "Format DLQ Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_DOCUMENT_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "DLQ_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.Timestamp }}",
+            "Workflow_Name": "={{ $json.Workflow_Name }}",
+            "Node_Name": "={{ $json.Node_Name }}",
+            "Error_Message": "={{ $json.Error_Message }}",
+            "Execution_URL": "={{ $json.Execution_URL }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Workflow_Name",
+              "displayName": "Workflow_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Node_Name",
+              "displayName": "Node_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Error_Message",
+              "displayName": "Error_Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Execution_URL",
+              "displayName": "Execution_URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3a00003-0003-4000-8000-000000000003",
+      "name": "Write To DLQ Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        640,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format DLQ Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format DLQ Log": {
+      "main": [
+        [
+          {
+            "node": "Write To DLQ Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}
