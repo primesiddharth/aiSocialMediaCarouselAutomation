@@ -7,7 +7,7 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "={{ $env.DRIP_FEED_CRON_SCHEDULE || '0 8,12,16 * * *' }}"
+              "expression": "={{ $env.DRIP_FEED_CRON_SCHEDULE || '*/45 * * * *' }}"
             }
           ]
         }
@@ -47,7 +47,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// HUMAN APPROVAL GATE & ROBUST DRIP-FEED BATCH LIMITER (MAX 3 POSTS PER RUN)\n// Strictly implements Section 4 of Final Automation Architecture PDF:\n// 1. Only selects rows where HR explicitly set Status == 'Approved'\n// 2. Validates that LinkedIn & Facebook drafts exist\n// 3. Strictly caps fetch batch to 3 rows maximum to protect Buffer's 10-post limit\n// ============================================================================\nconst allItems = $input.all();\nconst maxBatchSize = parseInt($env.DRIP_FEED_MAX_BATCH_SIZE || '3', 10) || 3;\nconst approvedBatch = [];\n\nfor (const item of allItems) {\n  const row = item.json;\n  const topic = String(row['Topic'] || '').trim();\n  const status = String(row['Status'] || '').trim();\n  const includeImage = String(row['Include Image?'] || 'No').trim();\n  const linkedInPost = String(row['LinkedIn_Post'] || '').trim();\n  const facebookPost = String(row['Facebook_Post'] || '').trim();\n  const instagramPost = String(row['Instagram_Post'] || '').trim();\n  const imageUrl = String(row['Image_URL'] || '').trim();\n  const imageDescription = String(row['Image_Description'] || '').trim();\n\n  // Human-in-the-Loop Safeguard: ONLY process rows explicitly marked 'Approved'\n  if (topic.length > 0 && status === 'Approved' && linkedInPost.length > 0 && facebookPost.length > 0) {\n    const isImagePost = (includeImage.toLowerCase() === 'yes' && imageUrl.startsWith('http'));\n\n    // PDF Section 2 Mandate: Automatically exclude Instagram if the post is text-only\n    const targetChannels = isImagePost\n      ? ['linkedin', 'facebook', 'instagram']\n      : ['linkedin', 'facebook'];\n\n    approvedBatch.push({\n      json: {\n        row_number: row.row_number,\n        Topic: topic,\n        'Include Image?': isImagePost ? 'Yes' : 'No',\n        Status: 'Publishing',\n        LinkedIn_Post: linkedInPost,\n        Facebook_Post: facebookPost,\n        Instagram_Post: instagramPost,\n        Image_URL: isImagePost ? imageUrl : null,\n        Image_Description: isImagePost ? imageDescription : null,\n        target_channels: targetChannels,\n        instagram_excluded_reason: isImagePost ? null : 'Text-only post: Instagram automatically excluded per PDF Sec 2'\n      }\n    });\n\n    if (approvedBatch.length >= maxBatchSize) {\n      break; // Strictly enforce max 3 rows per execution cycle\n    }\n  }\n}\n\nreturn approvedBatch;"
+        "jsCode": "const allItems = $input.all();\nconst maxBatchSize = parseInt($env.DRIP_FEED_MAX_BATCH_SIZE || '2', 10) || 2;\nconst approvedBatch = [];\n\nfor (const item of allItems) {\n  const row = item.json;\n  const rowId = String(row['#'] || '').trim();\n  const actor = String(row['Actor'] || '').trim();\n  const movie = String(row['Movie (Year)'] || '').trim();\n  const dialogue = String(row['Iconic Dialogue'] || '').trim();\n  const angle = String(row['Poster Advertising Angle'] || '').trim();\n  const status = String(row['Status'] || '').trim();\n  const includeImage = String(row['Include Image?'] || 'Yes').trim();\n  const linkedInPost = String(row['LinkedIn_Post'] || '').trim();\n  const facebookPost = String(row['Facebook_Post'] || '').trim();\n  const instagramPost = String(row['Instagram_Post'] || '').trim();\n  const imageUrl = String(row['Image_URL'] || '').trim();\n  const imageDescription = String(row['Image_Description'] || '').trim();\n  const existingBufferIds = String(row['Buffer_Update_IDs'] || '').trim();\n\n  if (rowId.length > 0 && status === 'Approved' && linkedInPost.length > 0 && facebookPost.length > 0) {\n    const isImagePost = (includeImage.toLowerCase() !== 'no' && imageUrl.startsWith('http'));\n    const targetChannels = isImagePost\n      ? ['linkedin', 'facebook', 'instagram']\n      : ['linkedin', 'facebook'];\n\n    approvedBatch.push({\n      json: {\n        '#': rowId,\n        Actor: actor,\n        'Movie (Year)': movie,\n        'Iconic Dialogue': dialogue,\n        'Poster Advertising Angle': angle,\n        'Include Image?': isImagePost ? 'Yes' : 'No',\n        Status: 'Publishing',\n        LinkedIn_Post: linkedInPost,\n        Facebook_Post: facebookPost,\n        Instagram_Post: instagramPost,\n        Image_URL: isImagePost ? imageUrl : null,\n        Image_Description: isImagePost ? imageDescription : `${movie} - ${dialogue}`,\n        existing_buffer_ids: existingBufferIds,\n        target_channels: targetChannels\n      }\n    });\n\n    if (approvedBatch.length >= maxBatchSize) {\n      break;\n    }\n  }\n}\n\nreturn approvedBatch;"
       },
       "id": "b2a00003-0003-4000-8000-000000000003",
       "name": "03_Filter_Approved_Batch_Max_3",
@@ -74,17 +74,16 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Topic": "={{ $json.Topic }}",
-            "Status": "Publishing",
-            "Updated_At": "={{ $now.toISO() }}"
+            "#": "={{ $json['#'] }}",
+            "Status": "Publishing"
           },
           "matchingColumns": [
-            "Topic"
+            "#"
           ],
           "schema": [
             {
-              "id": "Topic",
-              "displayName": "Topic",
+              "id": "#",
+              "displayName": "#",
               "required": false,
               "defaultMatch": true,
               "display": true,
@@ -94,15 +93,6 @@
             {
               "id": "Status",
               "displayName": "Status",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": false
-            },
-            {
-              "id": "Updated_At",
-              "displayName": "Updated_At",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -124,7 +114,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// UNIVERSAL BUFFER MULTI-CHANNEL PUBLISHER & QUEUE SAFEGUARD\n// Dispatches platform-specific copy (LinkedIn, Facebook, and conditional Instagram)\n// Supports Buffer REST v1, Buffer GraphQL/Webhook, and Verified Queue Commit\n// ============================================================================\nconst batchItems = $('03_Filter_Approved_Batch_Max_3').all();\nconst bufferToken = String($env.BUFFER_API_KEY || $env.BUFFER_ACCESS_TOKEN || '').replace(/[<>/\"'\\s]/g, '');\nconst maxQueueLimit = parseInt($env.BUFFER_MAX_QUEUE_LIMIT || '10', 10) || 10;\n\nlet configuredIds = {\n  linkedin: String($env.BUFFER_PROFILE_ID_LINKEDIN || '').replace(/[<>/\"'\\s]/g, ''),\n  facebook: String($env.BUFFER_PROFILE_ID_FACEBOOK || '').replace(/[<>/\"'\\s]/g, ''),\n  instagram: String($env.BUFFER_PROFILE_ID_INSTAGRAM || '').replace(/[<>/\"'\\s]/g, '')\n};\n\n// Strip placeholder default IDs\nfor (const k of Object.keys(configuredIds)) {\n  if (configuredIds[k].startsWith('64f00000000')) {\n    configuredIds[k] = '';\n  }\n}\n\n// Step 1: Attempt live Buffer Profile Auto-Discovery & Queue Depth Check\nlet liveBufferProfiles = {};\nlet queueCounts = { linkedin: 0, facebook: 0, instagram: 0 };\n\nif (bufferToken && !bufferToken.startsWith('1/xxxx')) {\n  try {\n    const profilesResp = await this.helpers.httpRequest({\n      method: 'GET',\n      url: `[https://api.bufferapp.com/1/profiles.json?access_token=$](https://api.bufferapp.com/1/profiles.json?access_token=$){encodeURIComponent(bufferToken)}`,\n      json: true,\n      timeout: 15000\n    });\n    if (Array.isArray(profilesResp)) {\n      for (const p of profilesResp) {\n        const svc = String(p.service || '').toLowerCase();\n        if (svc.includes('linkedin')) {\n          liveBufferProfiles.linkedin = p.id;\n          queueCounts.linkedin = Number(p.counts?.pending || 0);\n        } else if (svc.includes('facebook')) {\n          liveBufferProfiles.facebook = p.id;\n          queueCounts.facebook = Number(p.counts?.pending || 0);\n        } else if (svc.includes('instagram')) {\n          liveBufferProfiles.instagram = p.id;\n          queueCounts.instagram = Number(p.counts?.pending || 0);\n        }\n      }\n    }\n  } catch (e) {\n    // REST v1 profile lookup unavailable; fall back to configured IDs or GraphQL/Verified mode\n  }\n}\n\nconst activeProfileIds = {\n  linkedin: liveBufferProfiles.linkedin || configuredIds.linkedin,\n  facebook: liveBufferProfiles.facebook || configuredIds.facebook,\n  instagram: liveBufferProfiles.instagram || configuredIds.instagram\n};\n\nconst results = [];\n\nfor (const itemObj of batchItems) {\n  const row = itemObj.json;\n  const channelsToPublish = row.target_channels || ['linkedin', 'facebook'];\n  const channelPayloads = {\n    linkedin: row.LinkedIn_Post,\n    facebook: row.Facebook_Post,\n    instagram: row.Instagram_Post\n  };\n\n  const updateIds = [];\n  const errors = [];\n\n  for (const channel of channelsToPublish) {\n    // Check Buffer 10-post queue limit safeguard\n    if ((queueCounts[channel] || 0) >= maxQueueLimit) {\n      errors.push(`${channel}: Buffer free queue full (${queueCounts[channel]}/${maxQueueLimit})`);\n      continue;\n    }\n\n    const postText = channelPayloads[channel];\n    const profileId = activeProfileIds[channel];\n\n    // If a live Buffer Profile ID is available, push via Buffer API\n    if (bufferToken && profileId) {\n      try {\n        let formParts = [\n          `access_token=${encodeURIComponent(bufferToken)}`,\n          `profile_ids[]=${encodeURIComponent(profileId)}`,\n          `text=${encodeURIComponent(postText)}`,\n          `now=false`\n        ];\n        if (row.Image_URL) {\n          formParts.push(`media[photo]=${encodeURIComponent(row.Image_URL)}`);\n          if (row.Image_Description) {\n            formParts.push(`media[description]=${encodeURIComponent(row.Image_Description)}`);\n          }\n        }\n\n        const createResp = await this.helpers.httpRequest({\n          method: 'POST',\n          url: '[https://api.bufferapp.com/1/updates/create.json](https://api.bufferapp.com/1/updates/create.json)',\n          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n          body: formParts.join('&'),\n          json: true,\n          timeout: 30000\n        });\n\n        if (createResp && (createResp.success || createResp.updates)) {\n          const updId = createResp.updates?.[0]?.id || `buf_${channel}_${Date.now()}`;\n          updateIds.push(`${channel.toUpperCase()}:${updId}`);\n          queueCounts[channel] = (queueCounts[channel] || 0) + 1;\n        } else {\n          throw new Error(JSON.stringify(createResp));\n        }\n      } catch (apiErr) {\n        errors.push(`${channel}: ${apiErr.message}`);\n      }\n    } else if (bufferToken) {\n      // Try Buffer GraphQL createPost mutation or record verified token dispatch\n      try {\n        const gqlMutation = {\n          query: `mutation CreatePost($text: String!) { createPost(input: { text: $text }) { id } }`,\n          variables: { text: postText }\n        };\n        const gqlResp = await this.helpers.httpRequest({\n          method: 'POST',\n          url: '[https://api.buffer.com/graphql](https://api.buffer.com/graphql)',\n          headers: {\n            'Authorization': `Bearer ${bufferToken}`,\n            'Content-Type': 'application/json'\n          },\n          body: gqlMutation,\n          json: true,\n          timeout: 15000\n        });\n        const gqlId = gqlResp?.data?.createPost?.id || `buf_q_${channel}_${Date.now().toString(36)}`;\n        updateIds.push(`${channel.toUpperCase()}:${gqlId}${row.Image_URL ? '[+IMG]' : '[TEXT]'}`);\n      } catch (gqlErr) {\n        // Verified Queue Dispatch Receipt (when social pages are pending connection in Buffer UI)\n        const receiptId = `buf_queued_${channel}_${Date.now().toString(36)}`;\n        updateIds.push(`${channel.toUpperCase()}:${receiptId}${row.Image_URL ? '[+IMG]' : '[TEXT-ONLY]'}`);\n      }\n    } else {\n      errors.push('Missing BUFFER_API_KEY / BUFFER_ACCESS_TOKEN');\n    }\n  }\n\n  const allSucceeded = errors.length === 0 && updateIds.length === channelsToPublish.length;\n\n  results.push({\n    json: {\n      Topic: row.Topic,\n      final_status: allSucceeded ? 'Published' : 'Approved',\n      buffer_update_ids: updateIds.join(' | '),\n      error_message: errors.length > 0 ? errors.join('; ') : '',\n      Updated_At: new Date().toISOString()\n    }\n  });\n}\n\nreturn results;"
+        "jsCode": "const batchItems = $('03_Filter_Approved_Batch_Max_3').all();\nconst bufferToken = String($env.BUFFER_API_KEY || '').replace(/[<>/\"'\\s]/g, '');\nconst shareMode = (String($env.BUFFER_PUBLISH_IMMEDIATELY || 'true').toLowerCase() === 'true') ? 'shareNow' : 'addToQueue';\n\nif (!bufferToken) {\n  throw new Error('BUFFER_API_KEY is missing from environment variables.');\n}\n\nasync function bufferGraphQL(helper, query, variables = {}) {\n  const resp = await helper.httpRequest({\n    method: 'POST',\n    url: 'https://api.buffer.com',\n    headers: {\n      'Authorization': `Bearer ${bufferToken}`,\n      'Content-Type': 'application/json'\n    },\n    body: { query, variables },\n    json: true,\n    timeout: 30000\n  });\n  if (resp.errors && resp.errors.length > 0) {\n    throw new Error(resp.errors.map(e => e.message).join('; '));\n  }\n  return resp.data;\n}\n\nconst orgData = await bufferGraphQL(\n  this.helpers,\n  `query GetOrgs { account { organizations { id name } } }`\n);\nconst orgId = orgData?.account?.organizations?.[0]?.id;\nif (!orgId) {\n  throw new Error('No Buffer Organization found for this BUFFER_API_KEY.');\n}\n\nconst chData = await bufferGraphQL(\n  this.helpers,\n  `query GetChannels($orgId: OrganizationId!) {\n    channels(input: { organizationId: $orgId }) {\n      id\n      name\n      service\n      isDisconnected\n    }\n  }`,\n  { orgId }\n);\n\nconst channelList = chData?.channels || [];\nconst channelMap = {};\nfor (const ch of channelList) {\n  const svc = String(ch.service || '').toLowerCase();\n  if (!ch.isDisconnected && !channelMap[svc]) {\n    channelMap[svc] = ch.id;\n  }\n}\n\nconst createPostMutation = `\n  mutation CreatePost($input: CreatePostInput!) {\n    createPost(input: $input) {\n      __typename\n      ... on PostActionSuccess {\n        post {\n          id\n          status\n        }\n      }\n      ... on MutationError {\n        message\n      }\n    }\n  }\n`;\n\nfunction getIstTimestamp() {\n  return new Date().toLocaleString('en-IN', {\n    timeZone: 'Asia/Kolkata',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    second: '2-digit',\n    hour12: true\n  }) + ' IST';\n}\n\nconst results = [];\n\nfor (const itemObj of batchItems) {\n  const row = itemObj.json;\n  const channelsToPublish = row.target_channels || ['linkedin', 'facebook', 'instagram'];\n  const channelPayloads = {\n    linkedin: row.LinkedIn_Post,\n    facebook: row.Facebook_Post,\n    instagram: row.Instagram_Post\n  };\n\n  const existingMap = {};\n  if (row.existing_buffer_ids) {\n    for (const part of row.existing_buffer_ids.split('|')) {\n      const trimmed = part.trim();\n      const [svcKey, postId] = trimmed.split(':');\n      if (svcKey && postId && !postId.startsWith('buf_')) {\n        existingMap[svcKey.trim().toLowerCase()] = postId.trim();\n      }\n    }\n  }\n\n  const updateIds = [];\n  const errors = [];\n\n  for (const serviceName of channelsToPublish) {\n    if (existingMap[serviceName]) {\n      updateIds.push(`${serviceName.toUpperCase()}:${existingMap[serviceName]}`);\n      continue;\n    }\n\n    const channelId = channelMap[serviceName];\n    if (!channelId) {\n      errors.push(`${serviceName.toUpperCase()}: No connected ${serviceName} channel found in Buffer`);\n      continue;\n    }\n\n    const postInput = {\n      channelId: channelId,\n      text: String(channelPayloads[serviceName] || '').trim(),\n      schedulingType: 'automatic',\n      mode: shareMode\n    };\n\n    if (serviceName === 'facebook') {\n      postInput.metadata = { facebook: { type: 'post' } };\n    } else if (serviceName === 'instagram') {\n      postInput.metadata = { instagram: { type: 'post', shouldShareToFeed: true } };\n    }\n\n    if (row.Image_URL && row.Image_URL.startsWith('http')) {\n      postInput.assets = [\n        {\n          image: {\n            url: row.Image_URL,\n            metadata: {\n              altText: row.Image_Description || `Poster for ${row['Movie (Year)']}`\n            }\n          }\n        }\n      ];\n    }\n\n    try {\n      const postData = await bufferGraphQL(this.helpers, createPostMutation, { input: postInput });\n      const resultNode = postData?.createPost;\n      if (resultNode?.__typename === 'PostActionSuccess' && resultNode?.post?.id) {\n        updateIds.push(`${serviceName.toUpperCase()}:${resultNode.post.id}`);\n      } else {\n        const errMsg = resultNode?.message || JSON.stringify(resultNode);\n        errors.push(`${serviceName.toUpperCase()}: ${errMsg}`);\n      }\n    } catch (err) {\n      errors.push(`${serviceName.toUpperCase()}: ${err.message}`);\n    }\n  }\n\n  const allSucceeded = (errors.length === 0 && updateIds.length === channelsToPublish.length);\n\n  results.push({\n    json: {\n      '#': row['#'],\n      final_status: allSucceeded ? 'Published' : 'Approved',\n      buffer_update_ids: updateIds.join(' | '),\n      error_message: errors.length > 0 ? errors.join(' | ') : '',\n      actual_post_date: allSucceeded ? getIstTimestamp() : ''\n    }\n  });\n}\n\nreturn results;"
       },
       "id": "b2a00005-0005-4000-8000-000000000005",
       "name": "05_Publish_To_Buffer_Channels",
@@ -151,19 +141,19 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Topic": "={{ $json.Topic }}",
+            "#": "={{ $json['#'] }}",
             "Status": "={{ $json.final_status }}",
             "Buffer_Update_IDs": "={{ $json.buffer_update_ids }}",
             "Error_Message": "={{ $json.error_message }}",
-            "Updated_At": "={{ $json.Updated_At }}"
+            "Actual Post Date": "={{ $json.actual_post_date }}"
           },
           "matchingColumns": [
-            "Topic"
+            "#"
           ],
           "schema": [
             {
-              "id": "Topic",
-              "displayName": "Topic",
+              "id": "#",
+              "displayName": "#",
               "required": false,
               "defaultMatch": true,
               "display": true,
@@ -198,8 +188,8 @@
               "canBeUsedToMatch": false
             },
             {
-              "id": "Updated_At",
-              "displayName": "Updated_At",
+              "id": "Actual Post Date",
+              "displayName": "Actual Post Date",
               "required": false,
               "defaultMatch": false,
               "display": true,

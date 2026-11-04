@@ -1,5 +1,5 @@
 """
-Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell) Poster Test + Auth Diagnostic.
+Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell) Simplified Typography Test.
 """
 import base64
 import json
@@ -25,11 +25,12 @@ def load_env(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        v = v.split(" #")[0].strip()  # Strip inline comments
+        v = v.split(" #")[0].strip()
         env_vars[k.strip()] = re.sub(r"[<>\"'\s]", "", v)
     return env_vars
 
 def generate_cf_flux_poster(account_id: str, api_token: str, prompt: str) -> tuple[str, bytes]:
+    # Switched back to flux-1-schnell for fast, JSON-compatible generation
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell"
     req = urllib.request.Request(
         url,
@@ -68,24 +69,22 @@ def main() -> None:
     cf_token = env.get("CLOUDFLARE_API_TOKEN") or env.get("CLOUDFLARE_API_KEY") or env.get("CF_API_TOKEN") or ""
     imgbb_key = env.get("IMGBB_API_KEY", "")
 
-    print(f"🔑 Loaded Account ID: {cf_account[:6]}...{cf_account[-4:] if len(cf_account) > 10 else 'INVALID'} (len={len(cf_account)})")
-    print(f"🔑 Loaded API Token : {cf_token[:6]}...{cf_token[-4:] if len(cf_token) > 10 else 'INVALID'} (len={len(cf_token)})\n")
-
-    if len(cf_account) != 32 or "paste" in cf_account.lower() or len(cf_token) < 20 or "paste" in cf_token.lower():
-        print("❌ [FAIL] Your local .env still has placeholder or invalid Cloudflare credentials!")
-        print("   Copy the exact CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN from Render into D:\\zero-touch-social-automation\\.env")
+    if len(cf_account) != 32 or len(cf_token) < 20:
+        print("❌ [FAIL] Missing Cloudflare credentials!")
         sys.exit(1)
 
+    # Simplified Prompt: Only 3 text elements to guarantee perfect spelling
     poster_prompt = (
-        'Split-layout corporate recruitment announcement poster graphic design. '
-        'Left panel on navy blue gradient: bold white and yellow headline text "Welcome Our New HR!" '
-        'and subtitle "RAHUL ROY" with yellow brush underline, three white circular icon badges labeled '
-        '"People First", "New Ideas", "Stronger Together", and bottom yellow banner reading "Welcome Aboard!". '
-        'Right side: modern office desk with black leather chair, hanging lanyard ID card reading "HR", '
-        'laptop, and coffee mug. Crisp vector typography, Canva Pro poster layout, 4k.'
+        'Professional Canva-style corporate social media announcement poster, split-layout graphic design. '
+        'On the left over a deep royal navy blue gradient panel: large bold modern white and vibrant yellow '
+        'headline typography reading "WELCOME OUR NEW HR!" and subtitle "RAHUL ROY" with a yellow brush-stroke '
+        'underline, and a warm cream brush-stroke banner reading "WELCOME ABOARD!". On the right side: a modern '
+        'sunlit glass office desk with a black leather executive chair, a hanging lanyard ID card badge clearly '
+        'reading "TEAM", a sleek laptop, and a white ceramic mug. Crisp vector typography, 4k resolution.'
     )
 
     try:
+        print("  -> Generating simplified typography poster via FLUX.1-schnell...")
         b64_img, img_bytes = generate_cf_flux_poster(cf_account, cf_token, poster_prompt)
     except Exception as exc:
         print(f"❌ [FAIL] {exc}")

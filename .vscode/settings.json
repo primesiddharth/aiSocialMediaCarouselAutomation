@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "C:\\Users\\Avirup Dey\\Desktop\\X-Auth-AI\\venv311\\Scripts\\python.exe",
+  "python.analysis.extraPaths": [
+    "C:\\Users\\Avirup Dey\\Desktop\\X-Auth-AI\\venv311\\Lib\\site-packages"
+  ],
+  "python.analysis.autoSearchPaths": true,
+  "pyright.venvPath": "C:\\Users\\Avirup Dey\\Desktop\\X-Auth-AI"
+}

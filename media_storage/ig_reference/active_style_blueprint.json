@@ -1,0 +1,9 @@
+{
+  "reference_profile": "@dangiuz",
+  "design_philosophy_name": "Cinematic Focal Depth",
+  "visual_hierarchy_principles": "Establish an unmistakable hero subject through deliberate scale dominance, strategic anchoring (center or rule-of-thirds), and calculated contrast against a layered, information-rich environment that recedes into atmospheric depth. Use secondary figures or elements as scale references to amplify the hero's presence and guide the eye through intentional size, position, and luminance relationships.",
+  "typography_craft_rules": "Treat typography as structural architecture: bold, large-scale, and high-contrast against its backing surface. Balance weight and kerning for instant legibility at a glance. Separate headline and sub-callout through decisive scale shifts and weight differentials. Allow angled or dynamic placement only when it reinforces compositional flow rather than decorates it.",
+  "color_harmony_principles": "Construct palettes around a dominant tonal field (dark or light), a secondary harmonic range that expands the mood, and sparse, high-saturation accents that pierce the hierarchy with surgical precision. Let neutrals bridge transitions; let contrast serve narrative emphasis, not decoration. Ensure every hue earns its place by directing attention or defining depth.",
+  "lighting_and_depth_principles": "Sculpt volume through studio-grade key lighting that wraps the hero, while practical or emissive sources in the mid-ground and background create luminous layers. Preserve negative space as breathing room that frames the subject. Use shadow falloff, rim lighting, and atmospheric perspective to push depth cues without clutter, turning darkness into a design asset rather than absence.",
+  "synthesized_by": "nvidia/nemotron-3-ultra-550b-a55b:free"
+}

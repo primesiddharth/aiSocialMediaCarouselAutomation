@@ -1,0 +1,18 @@
+# --- Core & Environment ---
+python-dotenv>=1.0.1
+requests>=2.32.3
+pydantic>=2.9.2
+numpy>=2.0.0
+
+# --- Stage 1: Instagram Extraction & Video Keyframing ---
+instaloader>=4.13.1
+yt-dlp>=2024.10.22
+opencv-python>=4.10.0.84
+Pillow>=10.4.0
+
+# --- Stage 1 & 2: Local Ollama Vision & Prompt Engineering ---
+ollama>=0.3.3
+
+# --- Google Sheets Direct Sync ---
+gspread>=6.1.4
+google-auth>=2.35.0

@@ -1,5 +1,5 @@
 {
-  "name": "My workflow",
+  "name": "01_Zero_Touch_Draft_Generation_Pipeline",
   "nodes": [
     {
       "parameters": {
@@ -12,17 +12,18 @@
           ]
         }
       },
-      "id": "98ffed01-8ff2-4046-a736-1c2539a8e3f6",
+      "id": "b1a00001-0001-4000-8000-000000000001",
       "name": "01_Schedule_Poll_Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        -1340,
-        120
+        220,
+        340
       ]
     },
     {
       "parameters": {
+        "operation": "read",
         "documentId": {
           "__rl": true,
           "value": "={{ $env.GOOGLE_SHEET_DOCUMENT_ID }}",
@@ -35,32 +36,26 @@
         },
         "options": {}
       },
-      "id": "63609844-7cdf-4f0e-8d86-14f476dd52ba",
+      "id": "b1a00002-0002-4000-8000-000000000002",
       "name": "02_Fetch_Sheet_Rows",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        -1120,
-        120
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "iw8yWnpMKilMNxf3",
-          "name": "Google Sheets account"
-        }
-      }
+        440,
+        340
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Filter for rows needing AI generation (Topic is non-empty AND Status is empty or 'Pending')\n// Process strictly 1 row per run to stay well within Render Free 512MB RAM & OpenRouter rate limits.\nconst allItems = $input.all();\nconst eligible = [];\n\nfor (const item of allItems) {\n  const row = item.json;\n  const topic = String(row['Topic'] || '').trim();\n  const status = String(row['Status'] || '').trim().toLowerCase();\n  const linkedInDraft = String(row['LinkedIn_Post'] || '').trim();\n\n  if (topic.length > 0 && (status === '' || status === 'pending') && linkedInDraft === '') {\n    const rawImageFlag = String(row['Include Image?'] || 'No').trim().toLowerCase();\n    const includeImageNormalized = (rawImageFlag === 'yes' || rawImageFlag === 'true') ? 'Yes' : 'No';\n    const mentionsNormalized = String(row['Mentions (Optional)'] || '').trim();\n\n    eligible.push({\n      json: {\n        row_number: row.row_number,\n        Topic: topic,\n        'Include Image?': includeImageNormalized,\n        'Mentions (Optional)': mentionsNormalized,\n        Status: 'Processing'\n      }\n    });\n    break; // Strictly 1 row per execution cycle for maximum crash-resilience\n  }\n}\n\nreturn eligible;"
+        "jsCode": "const allItems = $input.all();\nconst eligible = [];\n\nfor (const item of allItems) {\n  const row = item.json;\n  const rowId = String(row['#'] || '').trim();\n  const actor = String(row['Actor'] || '').trim();\n  const movie = String(row['Movie (Year)'] || '').trim();\n  const dialogue = String(row['Iconic Dialogue'] || '').trim();\n  const angle = String(row['Poster Advertising Angle'] || '').trim();\n  const status = String(row['Status'] || '').trim().toLowerCase();\n  const linkedInDraft = String(row['LinkedIn_Post'] || '').trim();\n\n  if (rowId.length > 0 && dialogue.length > 0 && angle.length > 0 && (status === '' || status === 'pending') && linkedInDraft === '') {\n    const rawImageFlag = String(row['Include Image?'] || 'Yes').trim().toLowerCase();\n    const includeImageNormalized = (rawImageFlag === 'no' || rawImageFlag === 'false' || rawImageFlag === '0') ? 'No' : 'Yes';\n\n    eligible.push({\n      json: {\n        '#': rowId,\n        Actor: actor,\n        'Movie (Year)': movie,\n        'Iconic Dialogue': dialogue,\n        'Poster Advertising Angle': angle,\n        'Include Image?': includeImageNormalized,\n        LinkedIn_Mention: String(row['LinkedIn_Mention'] || '').trim(),\n        Facebook_Mention: String(row['Facebook_Mention'] || '').trim(),\n        Instagram_Mention: String(row['Instagram_Mention'] || '').trim(),\n        Status: 'Processing'\n      }\n    });\n    break;\n  }\n}\n\nreturn eligible;"
       },
-      "id": "c9401f86-0605-4984-a968-6ff6f76b919d",
+      "id": "b1a00003-0003-4000-8000-000000000003",
       "name": "03_Filter_And_Sanitize_Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -900,
-        120
+        660,
+        340
       ]
     },
     {
@@ -79,17 +74,16 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Topic": "={{ $json.Topic }}",
-            "Status": "Processing",
-            "Updated_At": "={{ $now.toISO() }}"
+            "#": "={{ $json['#'] }}",
+            "Status": "Processing"
           },
           "matchingColumns": [
-            "Topic"
+            "#"
           ],
           "schema": [
             {
-              "id": "Topic",
-              "displayName": "Topic",
+              "id": "#",
+              "displayName": "#",
               "required": false,
               "defaultMatch": true,
               "display": true,
@@ -104,46 +98,31 @@
               "display": true,
               "type": "string",
               "canBeUsedToMatch": false
-            },
-            {
-              "id": "Updated_At",
-              "displayName": "Updated_At",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": false
             }
           ]
         },
         "options": {}
       },
-      "id": "983453e0-028c-4184-854d-d0f0a559a1d6",
+      "id": "b1a00004-0004-4000-8000-000000000004",
       "name": "04_Lock_Row_Processing",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        -680,
-        120
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "iw8yWnpMKilMNxf3",
-          "name": "Google Sheets account"
-        }
-      }
+        880,
+        340
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// ZERO-TOUCH META-PROMPTING ENGINE (OPENROUTER DYNAMIC FREE-TIER ROUTING)\n// Strictly implements Section 3 of Final Automation Architecture PDF\n// ============================================================================\nconst inputRow = $('03_Filter_And_Sanitize_Input').first().json;\nconst topic = inputRow['Topic'];\nconst includeImage = inputRow['Include Image?'];\nconst mentions = inputRow['Mentions (Optional)'] || '';\n\nconst apiKey = $env.OPENROUTER_API_KEY;\nconst baseUrl = ($env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\\/$/, '');\nconst configuredModel =$env.OPENROUTER_MODEL || 'qwen/qwen-2.5-72b-instruct:free';\n\nif (!apiKey) {\n  throw new Error('OPENROUTER_API_KEY is missing from environment variables.');\n}\n\nconst systemPrompt = [\n  \"You are an expert social media strategist. Determine the best tone per platform.\",\n  \"If handles are provided in the 'Mentions' variable, weave them naturally into the platform-specific post text. If empty, rely only on hashtags.\",\n  \"CRITICAL RULES:\",\n  \"1. If 'Image Needed' is 'No' (case-insensitive), you MUST set both \\\"image_gen_prompt\\\" and \\\"image_description\\\" to null.\",\n  \"2. If 'Image Needed' is 'Yes' (case-insensitive), \\\"image_gen_prompt\\\" MUST be a highly detailed, photorealistic 4k prompt for FLUX.1, and \\\"image_description\\\" MUST be concise accessibility alt-text describing the image.\",\n  \"3. Return ONLY a raw, valid JSON object with NO markdown formatting, NO ```json code blocks, and NO extra text:\",\n  '{ \"linkedin_post\": \"Professional tone text, handles, hashtags\", \"facebook_post\": \"Conversational text, handles, hashtags\", \"instagram_post\": \"Visual tone, emoji-heavy, hashtags\", \"image_gen_prompt\": \"A highly detailed 4k prompt for FLUX.1 (or null)\", \"image_description\": \"Alt-text describing the image (or null)\" }'\n].join('\\n');\n\nconst userPrompt = `Topic: ${topic} | Image Needed: ${includeImage} | Mentions: ${mentions}`;\n\nfunction extractCleanJson(rawText) {\n  let cleaned = String(rawText || '').trim();\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '');\n  const firstBrace = cleaned.indexOf('{');\n  const lastBrace = cleaned.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1) {\n    cleaned = cleaned.substring(firstBrace, lastBrace + 1);\n  }\n  return JSON.parse(cleaned);\n}\n\n// Step 1: Dynamically discover live 0-cost free models on OpenRouter\nlet candidateModels = [configuredModel];\ntry {\n  const modelsResp = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `${baseUrl}/models`,\n    headers: { 'Authorization': `Bearer ${apiKey}` },\n    json: true,\n    timeout: 15000\n  });\n  const dataList = (modelsResp && modelsResp.data) ? modelsResp.data : [];\n  for (const m of dataList) {\n    const p = String(m?.pricing?.prompt ?? '1');\n    const c = String(m?.pricing?.completion ?? '1');\n    if ((p === '0' || p === '0.0') && (c === '0' || c === '0.0')) {\n      if (m.id && !m.id.includes('embed') && !m.id.includes('clip') && !candidateModels.includes(m.id)) {\n        candidateModels.push(m.id);\n      }\n    }\n  }\n} catch (e) {\n  // Fallback static list if /models discovery times out\n  const fallbacks = [\n    'nvidia/nemotron-3.5-super-vl:free',\n    'qwen/qwen-2.5-72b-instruct:free',\n    'google/gemma-3-27b-it:free',\n    'meta-llama/llama-3.3-70b-instruct:free'\n  ];\n  for (const fb of fallbacks) {\n    if (!candidateModels.includes(fb)) candidateModels.push(fb);\n  }\n}\n\nlet parsedOutput = null;\nlet usedModel = null;\nlet lastError = '';\n\nfor (const modelId of candidateModels.slice(0, 12)) {\n  try {\n    const chatResp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${baseUrl}/chat/completions`,\n      headers: {\n        'Authorization': `Bearer ${apiKey}`,\n        'Content-Type': 'application/json',\n        'HTTP-Referer': $env.WEBHOOK_URL || '[https://zero-touch-n8n.onrender.com](https://zero-touch-n8n.onrender.com)',\n        'X-Title': 'Zero-Touch Social Automation'\n      },\n      body: {\n        model: modelId,\n        messages: [\n          { role: 'system', content: systemPrompt },\n          { role: 'user', content: userPrompt }\n        ],\n        temperature: 0.4\n      },\n      json: true,\n      timeout: 45000\n    });\n\n    const content = chatResp?.choices?.[0]?.message?.content;\n    if (!content) throw new Error('Empty response content');\n    const candidateJson = extractCleanJson(content);\n\n    if (candidateJson.linkedin_post && candidateJson.facebook_post && candidateJson.instagram_post) {\n      parsedOutput = candidateJson;\n      usedModel = modelId;\n      break;\n    }\n  } catch (err) {\n    lastError = `${modelId}: ${err.message}`;\n    continue;\n  }\n}\n\nif (!parsedOutput) {\n  throw new Error(`All OpenRouter models failed. Last error: ${lastError}`);\n}\n\n// Enforce strict PDF Section 2 & 3 business rule for text-only vs image posts\nif (includeImage.toLowerCase() === 'no') {\n  parsedOutput.image_gen_prompt = null;\n  parsedOutput.image_description = null;\n} else {\n  if (!parsedOutput.image_gen_prompt) {\n    parsedOutput.image_gen_prompt = `Photorealistic 4k editorial photography representing: ${topic}, modern lighting, high detail`;\n  }\n  if (!parsedOutput.image_description) {\n    parsedOutput.image_description = `Visual illustration for ${topic}`;\n  }\n}\n\nreturn [\n  {\n    json: {\n      ...inputRow,\n      ai_model_used: usedModel,\n      linkedin_post: parsedOutput.linkedin_post,\n      facebook_post: parsedOutput.facebook_post,\n      instagram_post: parsedOutput.instagram_post,\n      image_gen_prompt: parsedOutput.image_gen_prompt,\n      image_description: parsedOutput.image_description,\n      Image_URL: null\n    }\n  }\n];"
+        "jsCode": "const inputRow = $('03_Filter_And_Sanitize_Input').first().json;\nconst rowId = inputRow['#'];\nconst actor = inputRow['Actor'];\nconst movie = inputRow['Movie (Year)'];\nconst rawDialogue = inputRow['Iconic Dialogue'];\nconst rawAngle = inputRow['Poster Advertising Angle'];\nconst includeImage = inputRow['Include Image?'] || 'Yes';\nconst liMention = inputRow['LinkedIn_Mention'] || '';\nconst fbMention = inputRow['Facebook_Mention'] || '';\nconst igMention = inputRow['Instagram_Mention'] || '';\n\nconst cleanDialogue = rawDialogue.replace(/^[\"']+|[\"']+$/g, '').trim();\nconst cleanAngle = rawAngle.replace(/^[\"']+|[\"']+$/g, '').trim();\n\nconst apiKey = String($env.OPENROUTER_API_KEY || '').replace(/[<>/\"'\\s]/g, '');\nconst baseUrl = 'https://openrouter.ai/api/v1';\nconst configuredModel = String($env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free').trim();\n\nif (!apiKey || apiKey === 'undefined') {\n  throw new Error('OPENROUTER_API_KEY is missing from environment variables.');\n}\n\nconst combinedPrompt = [\n  'You are an International Executive Creative Director and Copywriter for Creyotech (Website Design Agency).',\n  `Invent an original, breathtaking 1024x1024 (1K resolution, 1:1 square) commercial advertisement inspired by '${movie}' (${actor}).`,\n  'CREATIVE DIRECTION RULES:',\n  '1. Invent a movie-specific symbolic metaphor, bespoke color palette, dramatic lighting, and sophisticated composition tailored to this movie.',\n  '2. BANNED CLICHES: ZERO human faces, NO film reels, NO clapperboards, NO movie projectors.',\n  `3. Keep Iconic Dialogue EXACTLY word-for-word: \"${cleanDialogue}\"`,\n  `4. Keep Poster Advertising Angle EXACTLY word-for-word: \"${cleanAngle}\"`,\n  '5. In image_gen_prompt, instruct Nano Banana 2.1 to render these 3 exact text strings on the poster:',\n  `   - Primary Hero Headline: \"${cleanDialogue}\"`,\n  `   - Secondary Callout Pill: \"${cleanAngle}\"`,\n  '   - Footer Brand Badge: \"WEBSITE DESIGN | CREYOTECH\"',\n  '6. Return ONLY raw valid JSON (no markdown blocks):',\n  '{ \"linkedin_post\": \"...\", \"facebook_post\": \"...\", \"instagram_post\": \"...\", \"image_gen_prompt\": \"...\", \"image_description\": \"...\" }',\n  '',\n  `Row: ${rowId} | Actor: ${actor} | Movie: ${movie} | LinkedIn_Mention: ${liMention} | Facebook_Mention: ${fbMention} | Instagram_Mention: ${igMention}`\n].join('\\n');\n\nfunction extractCleanJson(rawText) {\n  let cleaned = String(rawText || '').replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '');\n  const firstBrace = cleaned.indexOf('{');\n  const lastBrace = cleaned.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1) {\n    cleaned = cleaned.substring(firstBrace, lastBrace + 1);\n  }\n  return JSON.parse(cleaned);\n}\n\nlet candidateModels = [configuredModel, 'nvidia/nemotron-3-ultra:free', 'nvidia/nemotron-3.5-super-vl:free', 'google/gemma-4-26b-a4b-it:free', 'openrouter/free'];\nlet parsedOutput = null;\nlet usedModel = null;\n\nfor (const modelId of candidateModels) {\n  try {\n    const chatResp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `${baseUrl}/chat/completions`,\n      headers: {\n        'Authorization': `Bearer ${apiKey}`,\n        'Content-Type': 'application/json',\n        'HTTP-Referer': 'https://zero-touch-n8n.onrender.com',\n        'X-Title': 'Zero-Touch Creative Director'\n      },\n      body: {\n        model: modelId,\n        messages: [{ role: 'user', content: combinedPrompt }],\n        temperature: 0.8\n      },\n      json: true,\n      timeout: 45000\n    });\n\n    const content = chatResp?.choices?.[0]?.message?.content;\n    if (!content) continue;\n    const candidateJson = extractCleanJson(content);\n    if (candidateJson.linkedin_post && candidateJson.facebook_post && candidateJson.instagram_post) {\n      parsedOutput = candidateJson;\n      usedModel = modelId;\n      break;\n    }\n  } catch (err) {\n    continue;\n  }\n}\n\nif (!parsedOutput) {\n  parsedOutput = {\n    linkedin_post: `\"${cleanDialogue}\"\\n\\nInspired by ${movie}, your digital presence deserves world-class engineering.\\n\\n🎯 ${cleanAngle}\\n\\n#WebsiteDesign #Creyotech #DigitalStrategy`,\n    facebook_post: `\"${cleanDialogue}\" ✨\\n\\n🎯 ${cleanAngle}\\n\\nUpgrade your website with Creyotech today! #Creyotech #WebsiteDesign`,\n    instagram_post: `\"${cleanDialogue}\" 🔥\\n\\n🎯 ${cleanAngle}\\n\\n🚀 DM Creyotech for world-class website design! #Creyotech #WebsiteDesign`,\n    image_gen_prompt: `Create a breathtaking 1024x1024 (1K resolution, 1:1 square) international luxury technology advertisement inspired by '${movie}' (${actor}). Use a powerful symbolic 3D metaphor, dramatic lighting, and sophisticated editorial composition (no human faces, no film reels, no clapperboards). Render exact text: Primary Headline: \"${cleanDialogue}\", Secondary Callout: \"${cleanAngle}\", Footer Badge: \"WEBSITE DESIGN | CREYOTECH\".`,\n    image_description: `${movie} (${actor}) Ad Poster: \"${cleanDialogue}\" - ${cleanAngle}`\n  };\n  usedModel = 'fallback-template';\n}\n\nfunction enforceVerbatimAndMention(postText, dialogueStr, angleStr, mentionStr) {\n  let finalPost = String(postText || '').trim();\n  if (!finalPost.toLowerCase().includes(dialogueStr.toLowerCase())) {\n    finalPost = `\"${dialogueStr}\"\\n\\n` + finalPost;\n  }\n  if (!finalPost.toLowerCase().includes(angleStr.toLowerCase())) {\n    finalPost = finalPost + `\\n\\n🎯 ${angleStr}`;\n  }\n  if (mentionStr && !finalPost.toLowerCase().includes(mentionStr.toLowerCase())) {\n    finalPost = finalPost + `\\n\\ncc: ${mentionStr}`;\n  }\n  return finalPost;\n}\n\nconst liPost = enforceVerbatimAndMention(parsedOutput.linkedin_post, cleanDialogue, cleanAngle, liMention);\nconst fbPost = enforceVerbatimAndMention(parsedOutput.facebook_post, cleanDialogue, cleanAngle, fbMention);\nconst igPost = enforceVerbatimAndMention(parsedOutput.instagram_post, cleanDialogue, cleanAngle, igMention);\n\nconst imgPrompt = (includeImage.toLowerCase() === 'no') ? '' : String(parsedOutput.image_gen_prompt || '');\nconst imgDesc = (includeImage.toLowerCase() === 'no') ? '' : String(parsedOutput.image_description || `${movie} (${actor}) Poster: \"${cleanDialogue}\"`);\n\nreturn [\n  {\n    json: {\n      ...inputRow,\n      ai_model_used: usedModel,\n      Status: 'Draft',\n      linkedin_post: liPost,\n      facebook_post: fbPost,\n      instagram_post: igPost,\n      image_gen_prompt: imgPrompt,\n      image_description: imgDesc,\n      Image_URL: ''\n    }\n  }\n];"
       },
-      "id": "97bfaf86-50e6-417c-bb71-88fdb9557186",
+      "id": "b1a00005-0005-4000-8000-000000000005",
       "name": "05_AI_Strategist_OpenRouter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -460,
-        120
+        1100,
+        340
       ]
     },
     {
@@ -169,39 +148,69 @@
         },
         "options": {}
       },
-      "id": "0a6fc1fb-d648-4fe8-b5cc-b73c297eae63",
+      "id": "b1a00006-0006-4000-8000-000000000006",
       "name": "06_Switch_Include_Image",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -240,
-        120
+        1320,
+        340
       ]
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// CONDITIONAL VISUAL AI ENGINE: CLOUDFLARE WORKERS AI (FLUX.1-SCHNELL) + IMGBB\n// Strictly triggered ONLY when 'Include Image?' == 'Yes'\n// ============================================================================\nconst item = $input.first().json;\nconst prompt = item.image_gen_prompt || `Photorealistic 4k corporate photography of ${item.Topic}`;\n\n// Clean credentials (strips any accidental < > brackets, quotes, or whitespace)\nconst cfAccountId = String($env.CLOUDFLARE_ACCOUNT_ID || '').replace(/[<>\"'\\s]/g, '');\nconst cfApiToken = String($env.CLOUDFLARE_API_TOKEN || '').replace(/[<>\"'\\s]/g, '');\nconst imgbbKey = String($env.IMGBB_API_KEY || '').replace(/[<>\"'\\s]/g, '');\n\nif (!cfAccountId || !cfApiToken) {\n  throw new Error('CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN is missing from Render Environment Variables.');\n}\nif (!imgbbKey) {\n  throw new Error('IMGBB_API_KEY is missing from Render Environment Variables.');\n}\n\n// 1. Generate high-resolution image via Cloudflare Workers AI (FLUX.1-schnell)\nconst cfUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`;\n\nconst cfResp = await this.helpers.httpRequest({\n  method: 'POST',\n  url: cfUrl,\n  headers: {\n    'Authorization': `Bearer ${cfApiToken}`,\n    'Content-Type': 'application/json'\n  },\n  body: {\n    prompt: prompt\n  },\n  json: true,\n  timeout: 60000\n});\n\nconst base64Image = cfResp?.result?.image;\nif (!base64Image) {\n  throw new Error(`Cloudflare FLUX.1 did not return an image payload: ${JSON.stringify(cfResp)}`);\n}\n\n// 2. Upload Base64 image directly to ImgBB for a permanent HTTPS URL\nconst formBody = `key=${encodeURIComponent(imgbbKey)}&image=${encodeURIComponent(base64Image)}&name=flux_${Date.now()}`;\n\nconst uploadResp = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.imgbb.com/1/upload',\n  headers: {\n    'Content-Type': 'application/x-www-form-urlencoded'\n  },\n  body: formBody,\n  json: true,\n  timeout: 45000\n});\n\nconst publicUrl = uploadResp?.data?.url;\nif (!publicUrl) {\n  throw new Error('ImgBB did not return a valid public image URL.');\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n      Image_URL: publicUrl\n    }\n  }\n];"
+        "jsCode": "const item = $input.first().json;\nconst prompt = item.image_gen_prompt;\n\nconst airouterKey = String($env.AIROUTER_API_KEY || '').replace(/[<>/\"'\\s]/g, '');\nconst airouterBase = String($env.AIROUTER_BASE_URL || 'https://api.airouter.in/v1').replace(/\\/+$/, '');\nconst airouterModel = String($env.AIROUTER_IMAGE_MODEL || 'google/gemini-nano-banana-2.1').trim();\nconst imgbbKey = String($env.IMGBB_API_KEY || '').replace(/[<>/\"'\\s]/g, '');\n\nif (!airouterKey) throw new Error('AIROUTER_API_KEY is missing.');\nif (!imgbbKey) throw new Error('IMGBB_API_KEY is missing.');\n\nlet base64Image = null;\nlet directImageUrl = null;\n\nfunction parseImageCandidate(val) {\n  if (!val || typeof val !== 'string') return;\n  const trimmed = val.trim();\n  if (trimmed.startsWith('data:image')) {\n    base64Image = trimmed.split(',')[1];\n  } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {\n    directImageUrl = trimmed;\n  } else if (trimmed.length > 256) {\n    base64Image = trimmed;\n  }\n}\n\nconst airouterResp = await this.helpers.httpRequest({\n  method: 'POST',\n  url: `${airouterBase}/chat/completions`,\n  headers: {\n    'Authorization': `Bearer ${airouterKey}`,\n    'Content-Type': 'application/json',\n    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',\n    'HTTP-Referer': 'https://zero-touch-n8n.onrender.com',\n    'X-Title': 'ZeroTouch-NanoBanana-Engine'\n  },\n  body: {\n    model: airouterModel,\n    messages: [{ role: 'user', content: prompt }],\n    modalities: ['image', 'text']\n  },\n  json: true,\n  timeout: 420000\n});\n\nconst msg = airouterResp?.choices?.[0]?.message || {};\nconst imagesArr = msg.images || [];\n\nfor (const imgEntry of imagesArr) {\n  if (typeof imgEntry === 'string') {\n    parseImageCandidate(imgEntry);\n  } else if (imgEntry && typeof imgEntry === 'object') {\n    const nestedUrl = (imgEntry.image_url && typeof imgEntry.image_url === 'object')\n      ? imgEntry.image_url.url\n      : imgEntry.image_url;\n    parseImageCandidate(nestedUrl || imgEntry.url || imgEntry.b64_json || imgEntry.data || imgEntry.image);\n  }\n  if (base64Image || directImageUrl) break;\n}\n\nif (!base64Image && !directImageUrl && typeof msg.content === 'string') {\n  const dataMatch = msg.content.match(/(data:image\\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)/);\n  if (dataMatch) {\n    parseImageCandidate(dataMatch[1]);\n  } else {\n    const urlMatch = msg.content.match(/(https?:\\/\\/[^\\s\\)\"'>]+)/);\n    if (urlMatch) parseImageCandidate(urlMatch[1]);\n  }\n}\n\nif (!base64Image && !directImageUrl) {\n  throw new Error('AIRouter did not return a recognizable image payload.');\n}\n\nconst imagePayload = base64Image || directImageUrl;\nconst formBody = `key=${encodeURIComponent(imgbbKey)}&image=${encodeURIComponent(imagePayload)}&name=nanobanana_1k_${Date.now()}`;\n\nconst uploadResp = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.imgbb.com/1/upload',\n  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n  body: formBody,\n  json: true,\n  timeout: 120000\n});\n\nconst publicUrl = uploadResp?.data?.url || directImageUrl;\nif (!publicUrl) {\n  throw new Error('ImgBB failed to return a public image URL.');\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n      Image_URL: publicUrl\n    }\n  }\n];"
       },
-      "id": "1c4530a8-aacb-4791-8b51-2f67c9433efe",
+      "id": "b1a00007-0007-4000-8000-000000000007",
       "name": "07_Generate_And_Host_Image",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        0,
-        0
+        1560,
+        220
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Text-Only Branch ('Include Image?' == 'No')\n// Bypasses Hugging Face completely and guarantees Image_URL is null\nconst item = $input.first().json;\nreturn [\n  {\n    json: {\n      ...item,\n      image_gen_prompt: null,\n      image_description: null,\n      Image_URL: ''\n    }\n  }\n];"
+        "jsCode": "const item = $input.first().json;\nreturn [\n  {\n    json: {\n      ...item,\n      image_gen_prompt: '',\n      image_description: '',\n      Image_URL: ''\n    }\n  }\n];"
       },
-      "id": "84798b2d-5897-4094-93cd-2f9d9b73f936",
+      "id": "b1a00008-0008-4000-8000-000000000008",
       "name": "08_Bypass_Image_Text_Only",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        0,
-        240
+        1560,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sheet-row-update",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b1a00010-0010-4000-8000-000000000010",
+      "name": "10_Webhook_Sheet_Row_Sync",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        660
+      ],
+      "webhookId": "sheet-row-update"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst body = (raw && raw.body && typeof raw.body === 'object') ? raw.body : raw;\n\nreturn [\n  {\n    json: {\n      '#': String(body['#'] || '').trim(),\n      Status: String(body.Status || 'Draft').trim(),\n      'Include Image?': String(body['Include Image?'] || 'Yes').trim(),\n      linkedin_post: String(body.LinkedIn_Post || body.linkedin_post || ''),\n      facebook_post: String(body.Facebook_Post || body.facebook_post || ''),\n      instagram_post: String(body.Instagram_Post || body.instagram_post || ''),\n      image_gen_prompt: String(body.Image_Gen_Prompt || body.image_gen_prompt || ''),\n      image_description: String(body.Image_Description || body.image_description || ''),\n      Image_URL: String(body.Image_URL || ''),\n      Error_Message: String(body.Error_Message || '')\n    }\n  }\n];"
+      },
+      "id": "b1a00011-0011-4000-8000-000000000011",
+      "name": "11_Normalize_Webhook_Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        660
       ]
     },
     {
@@ -220,29 +229,38 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "Topic": "={{ $json.Topic }}",
-            "Status": "Draft",
+            "#": "={{ $json['#'] }}",
+            "Include Image?": "={{ $json['Include Image?'] || 'Yes' }}",
+            "Status": "={{ $json.Status || 'Draft' }}",
             "LinkedIn_Post": "={{ $json.linkedin_post }}",
             "Facebook_Post": "={{ $json.facebook_post }}",
             "Instagram_Post": "={{ $json.instagram_post }}",
             "Image_Gen_Prompt": "={{ $json.image_gen_prompt || '' }}",
             "Image_Description": "={{ $json.image_description || '' }}",
             "Image_URL": "={{ $json.Image_URL || '' }}",
-            "Error_Message": "",
-            "Updated_At": "={{ $now.toISO() }}"
+            "Error_Message": "={{ $json.Error_Message || '' }}"
           },
           "matchingColumns": [
-            "Topic"
+            "#"
           ],
           "schema": [
             {
-              "id": "Topic",
-              "displayName": "Topic",
+              "id": "#",
+              "displayName": "#",
               "required": false,
               "defaultMatch": true,
               "display": true,
               "type": "string",
               "canBeUsedToMatch": true
+            },
+            {
+              "id": "Include Image?",
+              "displayName": "Include Image?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
             },
             {
               "id": "Status",
@@ -315,37 +333,21 @@
               "display": true,
               "type": "string",
               "canBeUsedToMatch": false
-            },
-            {
-              "id": "Updated_At",
-              "displayName": "Updated_At",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": false
             }
           ]
         },
         "options": {}
       },
-      "id": "0bcbce59-5e5a-44c4-ad01-aeea1072abdd",
+      "id": "b1a00009-0009-4000-8000-000000000009",
       "name": "09_Write_Drafts_To_Google_Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        260,
-        120
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "iw8yWnpMKilMNxf3",
-          "name": "Google Sheets account"
-        }
-      }
+        1860,
+        340
+      ]
     }
   ],
-  "pinData": {},
   "connections": {
     "01_Schedule_Poll_Trigger": {
       "main": [
@@ -441,17 +443,34 @@
           }
         ]
       ]
+    },
+    "10_Webhook_Sheet_Row_Sync": {
+      "main": [
+        [
+          {
+            "node": "11_Normalize_Webhook_Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11_Normalize_Webhook_Payload": {
+      "main": [
+        [
+          {
+            "node": "09_Write_Drafts_To_Google_Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": true,
   "settings": {
-    "executionOrder": "v1"
-  },
-  "versionId": "569fb718-d9ce-40af-858d-d30c29a5b82a",
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "665ff8d55554158da8779d9f34de585512591029bfca98528d6ebf0aef2619ba"
-  },
-  "id": "1WSPZBeiZfuMJ6WV",
-  "tags": []
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
 }
